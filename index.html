@@ -1,0 +1,1854 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Asistanı - Multi Model Consensus</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=DM+Mono:wght@400;500&family=Cormorant+Garamond:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    /* ─── DESIGN TOKENS ──────────────────────────────────────────────────── */
+    :root {
+      --bg:           #0a0a0f;
+      --surface-0:    #0f0f18;
+      --surface-1:    #13131e;
+      --surface-2:    #18182a;
+      --surface-3:    #1e1e32;
+      --glass:        rgba(255,255,255,0.035);
+      --glass-border: rgba(255,255,255,0.07);
+      --glass-hover:  rgba(255,255,255,0.06);
+
+      --accent:       #7c6af5;
+      --accent-soft:  rgba(124,106,245,0.15);
+      --accent-glow:  rgba(124,106,245,0.35);
+      --accent-light: #a99ff9;
+      --accent-dim:   rgba(124,106,245,0.4);
+
+      --gold:         #c9a96e;
+      --gold-soft:    rgba(201,169,110,0.12);
+
+      --text-1:       #f0eff8;
+      --text-2:       #a8a6c0;
+      --text-3:       #5c5a78;
+      --text-code:    #c8c4f0;
+
+      --user-bg:      rgba(124,106,245,0.1);
+      --user-border:  rgba(124,106,245,0.25);
+      --ai-bg:        rgba(255,255,255,0.025);
+      --ai-border:    rgba(255,255,255,0.06);
+
+      --error-bg:     rgba(239,83,80,0.15);
+      --error-border: rgba(239,83,80,0.35);
+      --error-text:   #ef5350;
+
+      --success-bg:   rgba(34,197,94,0.15);
+      --success-border: rgba(34,197,94,0.35);
+      --success-text: #22c55e;
+
+      --code-bg:      #0d0d18;
+      --code-border:  rgba(124,106,245,0.2);
+
+      --radius-sm:    6px;
+      --radius-md:    12px;
+      --radius-lg:    18px;
+      --radius-xl:    24px;
+
+      --shadow-sm:    0 2px 8px rgba(0,0,0,0.4);
+      --shadow-md:    0 8px 24px rgba(0,0,0,0.5);
+      --shadow-lg:    0 20px 60px rgba(0,0,0,0.6);
+      --shadow-glow:  0 0 30px rgba(124,106,245,0.12);
+
+      --transition:   0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      --spring:       0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    /* ─── RESET & BASE ───────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { height: 100%; }
+
+    body {
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-1);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* ─── AMBIENT BACKGROUND ─────────────────────────────────────────────── */
+    body::before,
+    body::after {
+      content: '';
+      position: fixed;
+      pointer-events: none;
+      z-index: 0;
+      border-radius: 50%;
+      filter: blur(80px);
+    }
+
+    body::before {
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(124,106,245,0.08) 0%, transparent 70%);
+      top: -200px;
+      right: -100px;
+      animation: ambientFloat1 12s ease-in-out infinite alternate;
+    }
+
+    body::after {
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, rgba(201,169,110,0.05) 0%, transparent 70%);
+      bottom: -150px;
+      left: -100px;
+      animation: ambientFloat2 15s ease-in-out infinite alternate;
+    }
+
+    @keyframes ambientFloat1 {
+      from { transform: translate(0, 0) scale(1); }
+      to   { transform: translate(-60px, 40px) scale(1.15); }
+    }
+    @keyframes ambientFloat2 {
+      from { transform: translate(0, 0) scale(1); }
+      to   { transform: translate(50px, -30px) scale(1.1); }
+    }
+
+    /* Noise grain overlay */
+    body > .grain {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 1;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-size: 180px;
+    }
+
+    /* ─── MAIN CONTAINER ─────────────────────────────────────────────────── */
+    .container {
+      position: relative;
+      z-index: 2;
+      width: min(820px, calc(100vw - 32px));
+      height: min(88vh, 760px);
+      background: linear-gradient(145deg, var(--surface-1) 0%, var(--surface-0) 100%);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-lg), var(--shadow-glow), inset 0 1px 0 rgba(255,255,255,0.05);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: containerIn 0.6s var(--spring) both;
+    }
+
+    @keyframes containerIn {
+      from { opacity: 0; transform: translateY(24px) scale(0.97); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* Subtle top edge highlight */
+    .container::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 10%; right: 10%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(124,106,245,0.5), rgba(201,169,110,0.3), transparent);
+      z-index: 3;
+    }
+
+    /* ─── HEADER ─────────────────────────────────────────────────────────── */
+    .header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--glass-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: linear-gradient(180deg, rgba(124,106,245,0.04) 0%, transparent 100%);
+      flex-shrink: 0;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* AI avatar orb */
+    .avatar-orb {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: conic-gradient(from 180deg, #7c6af5, #c9a96e, #a99ff9, #7c6af5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      flex-shrink: 0;
+      animation: orbSpin 8s linear infinite;
+    }
+
+    @keyframes orbSpin {
+      from { filter: hue-rotate(0deg); }
+      to   { filter: hue-rotate(360deg); }
+    }
+
+    .avatar-orb::before {
+      content: '';
+      position: absolute;
+      inset: 2px;
+      border-radius: 50%;
+      background: var(--surface-1);
+    }
+
+    .avatar-orb::after {
+      content: '✦';
+      position: relative;
+      z-index: 1;
+      font-size: 13px;
+      color: var(--accent-light);
+      animation: orbSpin 8s linear infinite reverse;
+    }
+
+    .header-title-block {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .header h1 {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 1.15rem;
+      font-weight: 500;
+      color: var(--text-1);
+      letter-spacing: 0.01em;
+      line-height: 1;
+    }
+
+    .header-subtitle {
+      font-size: 0.68rem;
+      color: var(--text-3);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-weight: 400;
+    }
+
+    /* Status pill */
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(34,197,94,0.08);
+      border: 1px solid rgba(34,197,94,0.18);
+      border-radius: 99px;
+      padding: 4px 10px;
+      font-size: 0.68rem;
+      color: rgba(74,222,128,0.9);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .status-pill::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      background: currentColor;
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    /* Consensus indicator badge */
+    .consensus-badge {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(124,106,245,0.12);
+      border: 1px solid rgba(124,106,245,0.25);
+      border-radius: 99px;
+      padding: 3px 8px;
+      font-size: 0.65rem;
+      color: var(--accent-light);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .consensus-badge::before {
+      content: '⚡';
+      font-size: 0.75rem;
+    }
+
+    /* Header controls */
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .header-btn {
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      color: var(--text-2);
+      cursor: pointer;
+      padding: 6px 10px;
+      border-radius: var(--radius-md);
+      font-size: 0.8rem;
+      font-weight: 500;
+      transition: all var(--transition);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .header-btn:hover:not(:disabled) {
+      background: var(--glass-hover);
+      color: var(--text-1);
+      border-color: var(--glass-border);
+    }
+
+    .header-btn:active {
+      transform: scale(0.95);
+    }
+
+    .header-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* ─── OUTPUT / CHAT AREA ──────────────────────────────────────────────── */
+    #output {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
+      scrollbar-color: var(--glass-border) transparent;
+    }
+
+    #output::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    #output::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    #output::-webkit-scrollbar-thumb {
+      background: var(--glass-border);
+      border-radius: 3px;
+    }
+
+    #output::-webkit-scrollbar-thumb:hover {
+      background: var(--glass-hover);
+    }
+
+    /* Empty state */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      height: 100%;
+      text-align: center;
+      animation: fadeIn 0.5s ease-out both;
+    }
+
+    .empty-icon {
+      font-size: 3rem;
+      opacity: 0.4;
+      animation: float 3s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+
+    .empty-title {
+      font-size: 1.3rem;
+      color: var(--text-1);
+      font-weight: 500;
+      letter-spacing: -0.01em;
+    }
+
+    .empty-sub {
+      font-size: 0.9rem;
+      color: var(--text-3);
+    }
+
+    /* ─── MESSAGE ROWS ────────────────────────────────────────────────────── */
+    .message-row {
+      display: flex;
+      gap: 10px;
+      animation: messageSlideIn 0.4s var(--spring) both;
+      align-items: flex-start;
+    }
+
+    .user-row {
+      justify-content: flex-end;
+    }
+
+    @keyframes messageSlideIn {
+      from {
+        opacity: 0;
+        transform: translateY(12px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .msg-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: conic-gradient(from 180deg, #7c6af5, #c9a96e, #a99ff9, #7c6af5);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    /* ─── MESSAGES ─────────────────────────────────────────────────────────── */
+    .message {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-width: 70%;
+      word-wrap: break-word;
+      position: relative;
+    }
+
+    .user-row .message {
+      max-width: 70%;
+      align-items: flex-end;
+    }
+
+    /* AI message */
+    .msg-ai {
+      background: var(--ai-bg);
+      border: 1px solid var(--ai-border);
+      border-radius: var(--radius-lg);
+      padding: 12px 14px;
+      color: var(--text-1);
+      line-height: 1.5;
+    }
+
+    /* User message */
+    .msg-user {
+      background: var(--user-bg);
+      border: 1px solid var(--user-border);
+      border-radius: var(--radius-lg);
+      padding: 10px 14px;
+      color: var(--text-1);
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+
+    .msg-time {
+      font-size: 0.7rem;
+      color: var(--text-3);
+      margin-top: 2px;
+      opacity: 0;
+      transition: opacity var(--transition);
+    }
+
+    .message:hover .msg-time {
+      opacity: 1;
+    }
+
+    /* ─── CODE BLOCKS ─────────────────────────────────────────────────────── */
+    .code-wrapper {
+      background: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      margin: 8px 0;
+    }
+
+    .code-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: rgba(124,106,245,0.08);
+      border-bottom: 1px solid var(--code-border);
+    }
+
+    .code-lang {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--accent-light);
+      text-transform: uppercase;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+    }
+
+    .copy-btn {
+      background: rgba(124,106,245,0.15);
+      border: 1px solid rgba(124,106,245,0.25);
+      color: var(--accent-light);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      cursor: pointer;
+      transition: all var(--transition);
+      font-weight: 600;
+    }
+
+    .copy-btn:hover {
+      background: rgba(124,106,245,0.25);
+      border-color: rgba(124,106,245,0.4);
+    }
+
+    .copy-btn.copied {
+      background: rgba(34,197,94,0.15);
+      border-color: rgba(34,197,94,0.35);
+      color: var(--success-text);
+    }
+
+    .code-wrapper pre {
+      padding: 12px;
+      overflow-x: auto;
+      background: var(--code-bg);
+    }
+
+    .code-wrapper code {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--text-code);
+      line-height: 1.4;
+    }
+
+    /* ─── TYPING INDICATOR ─────────────────────────────────────────────────── */
+    .typing-indicator {
+      display: flex;
+      gap: 4px;
+      padding: 6px 0;
+    }
+
+    .typing-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-light);
+      animation: typingBounce 1.4s ease-in-out infinite;
+    }
+
+    .typing-dot:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    .typing-dot:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+
+    @keyframes typingBounce {
+      0%, 60%, 100% {
+        opacity: 0.3;
+        transform: translateY(0);
+      }
+      30% {
+        opacity: 1;
+        transform: translateY(-8px);
+      }
+    }
+
+    /* ─── MODEL STATUS INDICATORS ─────────────────────────────────────────── */
+    .model-status {
+      display: flex;
+      gap: 8px;
+      padding: 8px 12px;
+      background: rgba(124,106,245,0.08);
+      border: 1px solid rgba(124,106,245,0.15);
+      border-radius: var(--radius-md);
+      font-size: 0.7rem;
+      color: var(--text-2);
+      margin-top: 6px;
+      flex-wrap: wrap;
+    }
+
+    .model-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 6px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 4px;
+    }
+
+    .model-status-dot {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .model-item.success {
+      color: var(--success-text);
+    }
+
+    .model-item.error {
+      color: var(--error-text);
+    }
+
+    .model-item.pending {
+      color: var(--text-3);
+    }
+
+    /* ─── INPUT AREA ──────────────────────────────────────────────────────── */
+    .input-container {
+      padding: 16px 20px;
+      border-top: 1px solid var(--glass-border);
+      background: linear-gradient(180deg, transparent 0%, rgba(124,106,245,0.02) 100%);
+      flex-shrink: 0;
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+    }
+
+    .input-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .input-field-wrap {
+      position: relative;
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius-md);
+      background: var(--glass);
+      transition: all var(--transition);
+      overflow: hidden;
+    }
+
+    .input-field-wrap:focus-within {
+      background: rgba(255,255,255,0.04);
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(124,106,245,0.1);
+    }
+
+    #input {
+      background: transparent;
+      border: none;
+      color: var(--text-1);
+      padding: 10px 12px;
+      font-family: inherit;
+      font-size: 0.95rem;
+      line-height: 1.4;
+      resize: none;
+      outline: none;
+      max-height: 120px;
+      min-height: 40px;
+    }
+
+    #input::placeholder {
+      color: var(--text-3);
+    }
+
+    .input-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 4px;
+      font-size: 0.7rem;
+      color: var(--text-3);
+    }
+
+    .hint-text {
+      opacity: 0.8;
+    }
+
+    .char-counter {
+      font-family: 'DM Mono', monospace;
+      font-weight: 500;
+      transition: color var(--transition);
+    }
+
+    .char-counter.warn {
+      color: #f59e0b;
+    }
+
+    /* Send button */
+    #btn {
+      width: 40px;
+      height: 40px;
+      min-width: 40px;
+      min-height: 40px;
+      border-radius: var(--radius-md);
+      background: linear-gradient(135deg, var(--accent) 0%, #a99ff9 100%);
+      border: none;
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      transition: all var(--transition);
+      box-shadow: 0 4px 12px rgba(124,106,245,0.3);
+      flex-shrink: 0;
+    }
+
+    #btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(124,106,245,0.4);
+    }
+
+    #btn:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    #btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .send-icon {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      background: currentColor;
+      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cline x1='22' y1='2' x2='11' y2='13'%3E%3C/line%3E%3Cpolygon points='22 2 15 22 11 13 2 9 22 2'%3E%3C/polygon%3E%3C/svg%3E") center / contain no-repeat;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ─── TOAST ────────────────────────────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(120px);
+      background: rgba(0,0,0,0.85);
+      color: var(--text-1);
+      padding: 12px 16px;
+      border-radius: var(--radius-md);
+      font-size: 0.85rem;
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(10px);
+      z-index: 1000;
+      pointer-events: none;
+      transition: transform var(--transition);
+      max-width: calc(100vw - 40px);
+      text-align: center;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ─── UTILITY CLASSES ──────────────────────────────────────────────────── */
+    .hidden {
+      display: none;
+    }
+
+    .fade-in {
+      animation: fadeIn 0.4s ease-out both;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* ─── RESPONSIVE ────────────────────────────────────────────────────────── */
+    @media (max-width: 640px) {
+      .container {
+        width: calc(100vw - 16px);
+        height: 100vh;
+        border-radius: 0;
+        max-height: 100vh;
+      }
+
+      .message {
+        max-width: 85%;
+      }
+
+      .user-row .message {
+        max-width: 85%;
+      }
+
+      .header h1 {
+        font-size: 1rem;
+      }
+
+      .header-subtitle {
+        font-size: 0.6rem;
+      }
+
+      .status-pill {
+        padding: 3px 8px;
+      }
+
+      .consensus-badge {
+        padding: 2px 6px;
+        font-size: 0.6rem;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .container {
+        width: 100vw;
+      }
+
+      .message {
+        max-width: 90%;
+      }
+
+      .user-row .message {
+        max-width: 90%;
+      }
+
+      .input-container {
+        padding: 12px 16px;
+        gap: 8px;
+      }
+
+      #input {
+        font-size: 0.9rem;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="grain"></div>
+
+  <div class="container">
+
+    <!-- ── HEADER ── -->
+    <div class="header">
+      <div class="header-left">
+        <div class="avatar-orb"></div>
+        <div class="header-title-block">
+          <h1>AI Asistanı</h1>
+          <div class="header-subtitle">Multi-Model Consensus v1.0</div>
+        </div>
+      </div>
+      <div class="header-controls">
+        <div class="consensus-badge" id="consensusBadge">4 Model</div>
+        <button class="header-btn" id="clearBtn" aria-label="Sohbeti temizle">
+          🗑️
+        </button>
+      </div>
+    </div>
+
+    <!-- ── MESSAGES ── -->
+    <div id="output" aria-live="polite" aria-label="Sohbet alanı"></div>
+
+    <!-- ── INPUT ── -->
+    <div class="input-container">
+      <div class="input-wrapper">
+        <div class="input-field-wrap">
+          <textarea
+            id="input"
+            rows="1"
+            placeholder="Bir şey sorun…"
+            aria-label="Mesaj giriş alanı"
+            autocomplete="off"
+            spellcheck="false"
+          ></textarea>
+        </div>
+        <div class="input-meta">
+          <span class="hint-text">⏎ Gönder &nbsp;·&nbsp; ⇧⏎ Yeni satır</span>
+          <span class="char-counter" id="charCount">0</span>
+        </div>
+      </div>
+      <button id="btn" aria-label="Mesajı gönder">
+        <span class="send-icon" aria-hidden="true"></span>
+      </button>
+    </div>
+
+  </div>
+
+  <!-- ── TOAST ── -->
+  <div class="toast" id="toastBox" role="alert" aria-live="assertive"></div>
+
+  <script>
+    /* ═════════════════════════════════════════════════════════════════════════════ */
+    /* ─── MULTI-MODEL API CONFIGURATION ────────────────────────────────────────── */
+    /* ═════════════════════════════════════════════════════════════════════════════ */
+
+    const API_CONFIG = {
+      gemini: {
+        name: "Google Gemini",
+        url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+        key: "AIzaSyCg5LZpr5Plb2fRnLfZLJtKKwAKgZd2lGg",
+        enabled: true,
+        weight: 1.0,
+        timeout: 30000
+      },
+      openrouter: {
+        name: "OpenRouter (Meta Llama)",
+        url: "https://openrouter.ai/api/v1/chat/completions",
+        key: "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",
+        model: "meta-llama/llama-2-70b-chat",
+        enabled: true,
+        weight: 0.9,
+        timeout: 30000
+      },
+      grok: {
+        name: "Grok AI",
+        url: "https://api.x.ai/v1/chat/completions",
+        key: "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",
+        model: "grok-beta",
+        enabled: true,
+        weight: 0.9,
+        timeout: 30000
+      },
+      github: {
+        name: "GitHub Copilot",
+        url: "https://api.github.com/repos/copilot/models/completions",
+        key: "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",
+        enabled: true,
+        weight: 0.8,
+        timeout: 30000
+      }
+    };
+
+    /* ═════════════════════════════════════════════════════════════════════════════ */
+    /* ─── STATE MANAGEMENT ─────────────────────────────────────────────────────── */
+    /* ═════════════════════════════════════════════════════════════════════════════ */
+
+    let chatHistory = JSON.parse(localStorage.getItem("aiContextMemory")) || [];
+    const outputDiv   = document.getElementById("output");
+    const inputEl     = document.getElementById("input");
+    const btnEl       = document.getElementById("btn");
+    const charCountEl = document.getElementById("charCount");
+    const clearBtn    = document.getElementById("clearBtn");
+    const consensusBadgeEl = document.getElementById("consensusBadge");
+
+    // API call tracking for logging
+    let apiCallLogs = {
+      successful: [],
+      failed: [],
+      pending: []
+    };
+
+    /* ═════════════════════════════════════════════════════════════════════════════ */
+    /* ─── INITIALIZATION ────────────────────────────────────────────────────────── */
+    /* ═════════════════════════════════════════════════════════════════════════════ */
+
+    window.addEventListener("load", function() {
+      try {
+        if (chatHistory.length === 0) {
+          showEmptyState();
+        } else {
+          chatHistory.forEach(msg => {
+            try {
+              const sender = msg.role === "user" ? "user" : "ai";
+              const text = msg.parts && msg.parts[0] ? msg.parts[0].text : "";
+              if (text) {
+                appendUIMessage(sender, text, false);
+              }
+            } catch (msgErr) {
+              console.warn("Mesaj yüklenirken hata:", msgErr);
+            }
+          });
+        }
+        updateConsensusBadge();
+      } catch (initErr) {
+        console.error("Başlatma hatası:", initErr);
+        showToast("Sistem başlatılırken hata oluştu");
+      }
+    });
+
+    function updateConsensusBadge() {
+      try {
+        const enabledCount = Object.values(API_CONFIG).filter(config => config.enabled).length;
+        if (consensusBadgeEl) {
+          consensusBadgeEl.textContent = `${enabledCount} Model`;
+        }
+      } catch (err) {
+        console.warn("Badge güncellenirken hata:", err);
+      }
+    }
+
+    function showEmptyState() {
+      try {
+        const el = document.createElement("div");
+        el.className = "empty-state";
+        el.id = "emptyState";
+        el.innerHTML = `
+          <div class="empty-icon">✦</div>
+          <div class="empty-title">Merhaba, nasıl yardımcı olabilirim?</div>
+          <div class="empty-sub">Çoklu AI modelleriyle güçlendirilmiş sistem</div>
+        `;
+        outputDiv.appendChild(el);
+      } catch (err) {
+        console.error("Boş durum gösterilirken hata:", err);
+      }
+    }
+
+    /* ═════════════════════════════════════════════════════════════════════════════ */
+    /* ─── CONSENSUS ALGORITHM ──────────────────────────────────────────────────── */
+    /* ═════════════════════════════════════════════════════════════════════════════ */
+
+    /**
+     * Gelişmiş Konsensüs Algoritması
+     * Tüm API yanıtlarını analiz eder, karşılaştırır ve en optimal cevabı seçer
+     */
+    function consensusAlgorithm(responses) {
+      try {
+        const validResponses = responses.filter(r => r.success && r.text && r.text.trim().length > 0);
+
+        if (validResponses.length === 0) {
+          throw new Error("Hiçbir geçerli yanıt alınamadı");
+        }
+
+        // Eğer sadece bir yanıt varsa, onu döndür
+        if (validResponses.length === 1) {
+          return {
+            consensusText: validResponses[0].text,
+            confidence: 0.7,
+            sources: [validResponses[0].source],
+            metadata: {
+              algorithm: "single_response",
+              processedAt: new Date().toISOString()
+            }
+          };
+        }
+
+        // Uzunluk analizi
+        const lengths = validResponses.map(r => r.text.length);
+        const avgLength = lengths.reduce((a, b) => a + b, 0) / lengths.length;
+        const normalizedResponses = validResponses.map((r, idx) => ({
+          ...r,
+          lengthScore: 1 - Math.abs(r.text.length - avgLength) / avgLength,
+          detailScore: calculateDetailScore(r.text),
+          structureScore: calculateStructureScore(r.text),
+          relevanceScore: 1.0 // Temel puan
+        }));
+
+        // Ağırlıklı skor hesapla
+        normalizedResponses.forEach(r => {
+          const baseWeight = API_CONFIG[r.modelId]?.weight || 0.8;
+          r.finalScore = (
+            (r.lengthScore * 0.25) +
+            (r.detailScore * 0.35) +
+            (r.structureScore * 0.25) +
+            (r.relevanceScore * 0.15)
+          ) * baseWeight;
+        });
+
+        // En yüksek skor alan yanıtı seç
+        const bestResponse = normalizedResponses.reduce((best, current) =>
+          current.finalScore > best.finalScore ? current : best
+        );
+
+        // Diğer yanıtlardan ek bilgiler topla (hybrid approach)
+        const complementaryInfo = extractComplementaryInfo(normalizedResponses, bestResponse);
+
+        let finalText = bestResponse.text;
+        if (complementaryInfo && complementaryInfo.length > 0) {
+          // Tamamlayıcı bilgiyi ekle
+          finalText += "\n\n[Diğer Kaynakların Ek Bilgisi]\n" + complementaryInfo.join("\n");
+        }
+
+        // Konsensüs güven seviyesini hesapla
+        const scoreVariance = calculateVariance(normalizedResponses.map(r => r.finalScore));
+        const confidence = Math.min(0.99, Math.max(0.5, 1 - (scoreVariance / 100)));
+
+        return {
+          consensusText: finalText,
+          confidence: Math.round(confidence * 100) / 100,
+          sources: validResponses.map(r => r.source),
+          bestSource: bestResponse.source,
+          metadata: {
+            algorithm: "weighted_consensus",
+            modelCount: validResponses.length,
+            scoreVariance: Math.round(scoreVariance * 100) / 100,
+            processedAt: new Date().toISOString(),
+            detailedScores: normalizedResponses.map(r => ({
+              source: r.source,
+              score: Math.round(r.finalScore * 100) / 100,
+              length: r.text.length
+            }))
+          }
+        };
+
+      } catch (consensusErr) {
+        console.error("Konsensüs algoritması hatası:", consensusErr);
+        // Fallback: İlk geçerli yanıtı döndür
+        const validResponses = responses.filter(r => r.success && r.text && r.text.trim().length > 0);
+        if (validResponses.length > 0) {
+          return {
+            consensusText: validResponses[0].text,
+            confidence: 0.6,
+            sources: [validResponses[0].source],
+            metadata: {
+              algorithm: "fallback_single",
+              error: consensusErr.message
+            }
+          };
+        }
+        throw new Error("Konsensüs oluşturulamadı: " + consensusErr.message);
+      }
+    }
+
+    function calculateDetailScore(text) {
+      try {
+        // Detay skoru: kelime sayısı, paragraf sayısı, liste vb.
+        const wordCount = text.split(/\s+/).length;
+        const paragraphs = text.split(/\n\n+/).length;
+        const hasLists = /[-•*]\s+/g.test(text);
+        const hasCode = /```/g.test(text);
+
+        let score = Math.min(1, wordCount / 500); // Normalize
+        if (hasLists) score += 0.1;
+        if (hasCode) score += 0.15;
+        score += (paragraphs / 10) * 0.1;
+
+        return Math.min(1, score);
+      } catch (err) {
+        console.warn("DetailScore hesaplaması hatası:", err);
+        return 0.5;
+      }
+    }
+
+    function calculateStructureScore(text) {
+      try {
+        // Yapı skoru: başlıklar, düzenleme, netlik
+        const hasHeadings = /^#{1,6}\s+/m.test(text);
+        const hasBold = /\*\*.*?\*\*/.test(text);
+        const hasNumbering = /^\d+\.\s+/m.test(text);
+        const avgSentenceLength = text.split(/[.!?]+/).filter(s => s.trim()).reduce((sum, s) => sum + s.split(/\s+/).length, 0) / Math.max(1, text.split(/[.!?]+/).length);
+
+        let score = 0.6;
+        if (hasHeadings) score += 0.15;
+        if (hasBold) score += 0.1;
+        if (hasNumbering) score += 0.1;
+        if (avgSentenceLength > 10 && avgSentenceLength < 30) score += 0.05;
+
+        return Math.min(1, score);
+      } catch (err) {
+        console.warn("StructureScore hesaplaması hatası:", err);
+        return 0.5;
+      }
+    }
+
+    function extractComplementaryInfo(responses, bestResponse) {
+      try {
+        const complementary = [];
+        responses.forEach(r => {
+          if (r.source !== bestResponse.source && r.finalScore > 0.5) {
+            // Başka kaynaklardan yüksek skor alan bilgiler
+            const sentences = r.text.split(/[.!?]+/).filter(s => s.trim()).slice(0, 2).join(". ");
+            if (sentences && !bestResponse.text.includes(sentences.substring(0, 50))) {
+              complementary.push(`• ${r.source}: ${sentences}`);
+            }
+          }
+        });
+        return complementary.slice(0, 2); // Max 2 tamamlayıcı bilgi
+      } catch (err) {
+        console.warn("Tamamlayıcı bilgi çıkartırken hata:", err);
+        return [];
+      }
+    }
+
+    function calculateVariance(values) {
+      try {
+        const mean = values.reduce((a, b) => a + b, 0) / values.length;
+        const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+        return Math.sqrt(variance);
+      } catch (err) {
+        console.warn("Variance hesaplaması hatası:", err);
+        return 0;
+      }
+    }
+
+    /* ═════════════════════════════════════════════════════════════════════════════ */
+    /* ─── API CALL FUNCTIONS ────────────────────────────────────────────────────── */
+    /* ═════════════════════════════════════════════════════════════════════════════ */
+
+    /**
+     * Google Gemini API çağrısı
+     */
+    async function callGeminiAPI(messages) {
+      return new Promise(async (resolve) => {
+        const timeout = setTimeout(() => {
+          resolve({
+            success: false,
+            text: null,
+            source: "Google Gemini",
+            modelId: "gemini",
+            error: "Zaman aşımı (30s)",
+            timestamp: new Date().toISOString()
+          });
+        }, API_CONFIG.gemini.timeout);
+
+        try {
+          const response = await fetch(API_CONFIG.gemini.url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-goog-api-key": API_CONFIG.gemini.key
+            },
+            body: JSON.stringify({ contents: messages })
+          });
+
+          clearTimeout(timeout);
+
+          if (!response.ok) {
+            const error = await response.text().catch(() => `HTTP ${response.status}`);
+            console.warn("Gemini API Hatası:", error);
+            resolve({
+              success: false,
+              text: null,
+              source: "Google Gemini",
+              modelId: "gemini",
+              error: `HTTP ${response.status}: ${error.substring(0, 50)}`,
+              timestamp: new Date().toISOString()
+            });
+            return;
+          }
+
+          const data = await response.json();
+
+          if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts || !data.candidates[0].content.parts[0]) {
+            throw new Error("Beklenmeyen API yanıt formatı");
+          }
+
+          resolve({
+            success: true,
+            text: data.candidates[0].content.parts[0].text,
+            source: "Google Gemini",
+            modelId: "gemini",
+            timestamp: new Date().toISOString()
+          });
+
+        } catch (err) {
+          clearTimeout(timeout);
+          console.error("Gemini API çağrısı hatası:", err);
+          resolve({
+            success: false,
+            text: null,
+            source: "Google Gemini",
+            modelId: "gemini",
+            error: err.message || "Bilinmeyen hata",
+            timestamp: new Date().toISOString()
+          });
+        }
+      });
+    }
+
+    /**
+     * OpenRouter API çağrısı (Llama 2)
+     */
+    async function callOpenRouterAPI(messages) {
+      return new Promise(async (resolve) => {
+        const timeout = setTimeout(() => {
+          resolve({
+            success: false,
+            text: null,
+            source: "OpenRouter (Llama)",
+            modelId: "openrouter",
+            error: "Zaman aşımı (30s)",
+            timestamp: new Date().toISOString()
+          });
+        }, API_CONFIG.openrouter.timeout);
+
+        try {
+          // OpenRouter format dönüşümü
+          const openrouterMessages = messages.map(msg => ({
+            role: msg.role === "user" ? "user" : "assistant",
+            content: msg.parts[0].text
+          }));
+
+          const response = await fetch(API_CONFIG.openrouter.url, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${API_CONFIG.openrouter.key}`,
+              "Content-Type": "application/json",
+              "HTTP-Referer": "https://localhost",
+              "X-Title": "AI-Assistant"
+            },
+            body: JSON.stringify({
+              model: API_CONFIG.openrouter.model,
+              messages: openrouterMessages,
+              temperature: 0.7,
+              max_tokens: 2000
+            })
+          });
+
+          clearTimeout(timeout);
+
+          if (!response.ok) {
+            const error = await response.text().catch(() => `HTTP ${response.status}`);
+            console.warn("OpenRouter API Hatası:", error);
+            resolve({
+              success: false,
+              text: null,
+              source: "OpenRouter (Llama)",
+              modelId: "openrouter",
+              error: `HTTP ${response.status}`,
+              timestamp: new Date().toISOString()
+            });
+            return;
+          }
+
+          const data = await response.json();
+
+          if (!data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
+            throw new Error("Beklenmeyen API yanıt formatı");
+          }
+
+          resolve({
+            success: true,
+            text: data.choices[0].message.content,
+            source: "OpenRouter (Llama)",
+            modelId: "openrouter",
+            timestamp: new Date().toISOString()
+          });
+
+        } catch (err) {
+          clearTimeout(timeout);
+          console.error("OpenRouter API çağrısı hatası:", err);
+          resolve({
+            success: false,
+            text: null,
+            source: "OpenRouter (Llama)",
+            modelId: "openrouter",
+            error: err.message || "Bilinmeyen hata",
+            timestamp: new Date().toISOString()
+          });
+        }
+      });
+    }
+
+    /**
+     * Grok API çağrısı (X AI)
+     */
+    async function callGrokAPI(messages) {
+      return new Promise(async (resolve) => {
+        const timeout = setTimeout(() => {
+          resolve({
+            success: false,
+            text: null,
+            source: "Grok AI",
+            modelId: "grok",
+            error: "Zaman aşımı (30s)",
+            timestamp: new Date().toISOString()
+          });
+        }, API_CONFIG.grok.timeout);
+
+        try {
+          const grokMessages = messages.map(msg => ({
+            role: msg.role === "user" ? "user" : "assistant",
+            content: msg.parts[0].text
+          }));
+
+          const response = await fetch(API_CONFIG.grok.url, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${API_CONFIG.grok.key}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model: API_CONFIG.grok.model,
+              messages: grokMessages,
+              temperature: 0.7,
+              max_tokens: 2000
+            })
+          });
+
+          clearTimeout(timeout);
+
+          if (!response.ok) {
+            const error = await response.text().catch(() => `HTTP ${response.status}`);
+            console.warn("Grok API Hatası:", error);
+            resolve({
+              success: false,
+              text: null,
+              source: "Grok AI",
+              modelId: "grok",
+              error: `HTTP ${response.status}`,
+              timestamp: new Date().toISOString()
+            });
+            return;
+          }
+
+          const data = await response.json();
+
+          if (!data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
+            throw new Error("Beklenmeyen API yanıt formatı");
+          }
+
+          resolve({
+            success: true,
+            text: data.choices[0].message.content,
+            source: "Grok AI",
+            modelId: "grok",
+            timestamp: new Date().toISOString()
+          });
+
+        } catch (err) {
+          clearTimeout(timeout);
+          console.error("Grok API çağrısı hatası:", err);
+          resolve({
+            success: false,
+            text: null,
+            source: "Grok AI",
+            modelId: "grok",
+            error: err.message || "Bilinmeyen hata",
+            timestamp: new Date().toISOString()
+          });
+        }
+      });
+    }
+
+    /**
+     * GitHub API çağrısı
+     */
+    async function callGitHubAPI(messages) {
+      return new Promise(async (resolve) => {
+        const timeout = setTimeout(() => {
+          resolve({
+            success: false,
+            text: null,
+            source: "GitHub Copilot",
+            modelId: "github",
+            error: "Zaman aşımı (30s)",
+            timestamp: new Date().toISOString()
+          });
+        }, API_CONFIG.github.timeout);
+
+        try {
+          const githubMessages = messages.map(msg => ({
+            role: msg.role === "user" ? "user" : "assistant",
+            content: msg.parts[0].text
+          }));
+
+          const response = await fetch(API_CONFIG.github.url, {
+            method: "POST",
+            headers: {
+              "Authorization": `token ${API_CONFIG.github.key}`,
+              "Content-Type": "application/json",
+              "Accept": "application/vnd.github+json"
+            },
+            body: JSON.stringify({
+              messages: githubMessages,
+              temperature: 0.7,
+              max_tokens: 2000
+            })
+          });
+
+          clearTimeout(timeout);
+
+          if (!response.ok) {
+            const error = await response.text().catch(() => `HTTP ${response.status}`);
+            console.warn("GitHub API Hatası:", error);
+            resolve({
+              success: false,
+              text: null,
+              source: "GitHub Copilot",
+              modelId: "github",
+              error: `HTTP ${response.status}`,
+              timestamp: new Date().toISOString()
+            });
+            return;
+          }
+
+          const data = await response.json();
+
+          if (!data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
+            throw new Error("Beklenmeyen API yanıt formatı");
+          }
+
+          resolve({
+            success: true,
+            text: data.choices[0].message.content,
+            source: "GitHub Copilot",
+            modelId: "github",
+            timestamp: new Date().toISOString()
+          });
+
+        } catch (err) {
+          clearTimeout(timeout);
+          console.error("GitHub API çağrısı hatası:", err);
+          resolve({
+            success: false,
+            text: null,
+            source: "GitHub Copilot",
+            modelId: "github",
+            error: err.message || "Bilinmeyen hata",
+            timestamp: new Date().toISOString()
+          });
+        }
+      });
+    }
+
+    /**
+     * Tüm API'leri paralel çağır ve sonuçları birleştir
+     */
+    async function callAllAPIs(messages) {
+      try {
+        const promises = [];
+
+        if (API_CONFIG.gemini.enabled) {
+          promises.push(callGeminiAPI(messages));
+        }
+
+        if (API_CONFIG.openrouter.enabled) {
+          promises.push(callOpenRouterAPI(messages));
+        }
+
+        if (API_CONFIG.grok.enabled) {
+          promises.push(callGrokAPI(messages));
+        }
+
+        if (API_CONFIG.github.enabled) {
+          promises.push(callGitHubAPI(messages));
+        }
+
+        // Promise.all yerine Promise.allSettled kullandık (partial failures tolere etmek için)
+        const results = await Promise.allSettled(promises);
+
+        // Sonuçları topla
+        const responses = results.map(result => {
+          if (result.status === "fulfilled") {
+            return result.value;
+          } else {
+            return {
+              success: false,
+              text: null,
+              source: "Unknown",
+              modelId: "unknown",
+              error: "Promise Reddedildi: " + (result.reason?.message || "Bilinmeyen hata"),
+              timestamp: new Date().toISOString()
+            };
+          }
+        });
+
+        return responses;
+
+      } catch (apiErr) {
+        console.error("API çağrısı hatası:", apiErr);
+        showToast("API çağrısı başarısız: " + apiErr.message);
+        throw apiErr;
+      }
+    }
+
+    /* ═════════════════════════════════════════════════════════════════════════════ */
+    /* ─── MESSAGE SENDING & CONSENSUS ──────────────────────────────────────────── */
+    /* ═════════════════════════════════════════════════════════════════════════════ */
+
+    async function send() {
+      try {
+        const text = inputEl.value.trim();
+        if (!text) return;
+
+        // Boş durum kaldır
+        const emptyState = document.getElementById("emptyState");
+        if (emptyState) emptyState.remove();
+
+        // Kullanıcı mesajını ekle
+        appendUIMessage("user", text, true);
+        chatHistory.push({ role: "user", parts: [{ text }] });
+
+        // Input temizle
+        inputEl.value = "";
+        inputEl.style.height = "auto";
+        charCountEl.textContent = "0";
+        charCountEl.classList.remove("warn");
+
+        // Gönder butonunu devre dışı bırak
+        btnEl.disabled = true;
+        btnEl.innerHTML = '<div class="spinner"></div>';
+
+        // Yazıcı göstergesi
+        const typingRow = createTypingIndicator();
+        outputDiv.appendChild(typingRow);
+        outputDiv.scrollTop = outputDiv.scrollHeight;
+
+        try {
+          // Tüm API'leri paralel çağır
+          const apiResponses = await callAllAPIs(chatHistory);
+
+          // Typing göstergesi kaldır
+          typingRow.remove();
+
+          // Konsensüs oluştur
+          const consensus = consensusAlgorithm(apiResponses);
+
+          // Yanıtı chat history'ye ekle
+          const aiReply = consensus.consensusText;
+          chatHistory.push({ role: "model", parts: [{ text: aiReply }] });
+          localStorage.setItem("aiContextMemory", JSON.stringify(chatHistory));
+
+          // Yanıtı UI'de göster
+          appendUIMessage("ai", aiReply, true);
+
+          // Model statüsü göster (debug)
+          appendModelStatus(apiResponses, consensus);
+
+          // Başarı mesajı
+          const successCount = apiResponses.filter(r => r.success).length;
+          if (successCount > 0) {
+            showToast(`✓ Konsensüs: ${successCount}/${apiResponses.length} model başarılı`);
+          }
+
+        } catch (apiError) {
+          typingRow.remove();
+          chatHistory.pop();
+          console.error("API Hata:", apiError);
+          showToast("Yanıt alınamadı: " + (apiError.message || "Bilinmeyen hata"));
+        }
+
+      } catch (err) {
+        console.error("Gönder fonksiyonu hatası:", err);
+        showToast("Bir hata oluştu: " + err.message);
+
+      } finally {
+        btnEl.disabled = false;
+        btnEl.innerHTML = '<span class="send-icon" aria-hidden="true"></span>';
+        inputEl.focus();
+      }
+    }
+
+    function appendModelStatus(responses, consensus) {
+      try {
+        const row = document.createElement("div");
+        row.className = "message-row";
+        row.style.justifyContent = "center";
+
+        const statusDiv = document.createElement("div");
+        statusDiv.className = "model-status";
+
+        responses.forEach(resp => {
+          const item = document.createElement("div");
+          item.className = "model-item";
+
+          if (resp.success) {
+            item.classList.add("success");
+            item.innerHTML = `<div class="model-status-dot"></div> ${resp.source.split(" ")[0]}`;
+          } else {
+            item.classList.add("error");
+            item.innerHTML = `<div class="model-status-dot"></div> ${resp.source.split(" ")[0]} ✗`;
+          }
+
+          statusDiv.appendChild(item);
+        });
+
+        // Konsensüs bilgisi
+        const consensusItem = document.createElement("div");
+        consensusItem.className = "model-item success";
+        consensusItem.style.marginLeft = "auto";
+        consensusItem.innerHTML = `<div class="model-status-dot"></div> Güven: ${Math.round(consensus.confidence * 100)}%`;
+        statusDiv.appendChild(consensusItem);
+
+        row.appendChild(statusDiv);
+        outputDiv.appendChild(row);
+        outputDiv.scrollTop = outputDiv.scrollHeight;
+
+      } catch (err) {
+        console.warn("Model status gösterilirken hata:", err);
+      }
+    }
+
+    /* ═════════════════════════════════════════════════════════════════════════════ */
+    /* ─── UI FUNCTIONS ────────────────────────────────────────────────────────── */
+    /* ═════════════════════════════════════════════════════════════════════════════ */
+
+    function createTypingIndicator() {
+      const row = document.createElement("div");
+      row.className = "message-row";
+      row.innerHTML = `
+        <div class="msg-avatar" aria-hidden="true"></div>
+        <div class="message msg-ai">
+          <div class="typing-indicator">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+          </div>
+        </div>
+      `;
+      return row;
+    }
+
+    function appendUIMessage(sender, text, animate = true) {
+      try {
+        const row = document.createElement("div");
+        row.className = "message-row" + (sender === "user" ? " user-row" : "");
+
+        const now  = new Date();
+        const time = now.getHours().toString().padStart(2,"0") + ":" + now.getMinutes().toString().padStart(2,"0");
+
+        if (sender === "ai") {
+          const msgDiv = document.createElement("div");
+          msgDiv.className = "message msg-ai";
+          msgDiv.innerHTML = parseMarkdown(text) + `<span class="msg-time">${time}</span>`;
+          row.innerHTML = '<div class="msg-avatar" aria-hidden="true"></div>';
+          row.appendChild(msgDiv);
+        } else {
+          const msgDiv = document.createElement("div");
+          msgDiv.className = "message msg-user";
+          msgDiv.innerText = text;
+          msgDiv.innerHTML += `<span class="msg-time">${time}</span>`;
+          row.appendChild(msgDiv);
+        }
+
+        if (!animate) row.style.animation = "none";
+
+        outputDiv.appendChild(row);
+        outputDiv.scrollTop = outputDiv.scrollHeight;
+
+      } catch (err) {
+        console.error("UI Mesaj ekleme hatası:", err);
+      }
+    }
+
+    function parseMarkdown(text) {
+      try {
+        let html = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+        // Kod blokları
+        html = html.replace(/```([\w]*)\n([\s\S]*?)```/g, function(match, lang, code) {
+          return `
+            <div class="code-wrapper">
+              <div class="code-header">
+                <span class="code-lang">${lang || 'code'}</span>
+                <button class="copy-btn" onclick="copyCode(this)">Kopyala</button>
+              </div>
+              <pre><code>${code}</code></pre>
+            </div>
+          `;
+        });
+
+        // Kalın yazı
+        html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+
+        // Listeler
+        html = html.replace(/^(?:\*|-)\s+(.*)$/gm, '<ul><li>$1</li></ul>');
+
+        // Line breaks
+        let finalHtml = html.replace(/\n/g, '<br>');
+        finalHtml = finalHtml.replace(/<pre><code>([\s\S]*?)<\/code><\/pre>/g, function(match, inner) {
+          return `<pre><code>${inner.replace(/<br>/g, '\n')}</code></pre>`;
+        });
+
+        return finalHtml;
+
+      } catch (err) {
+        console.error("Markdown parsing hatası:", err);
+        return text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      }
+    }
+
+    function copyCode(btnElement) {
+      try {
+        const codeText = btnElement.closest('.code-wrapper').querySelector('code').innerText;
+        navigator.clipboard.writeText(codeText).then(() => {
+          btnElement.textContent = "✓ Kopyalandı";
+          btnElement.classList.add("copied");
+          setTimeout(() => {
+            btnElement.innerHTML = "Kopyala";
+            btnElement.classList.remove("copied");
+          }, 2200);
+        }).catch(err => {
+          console.error("Kopyalama hatası:", err);
+          showToast("Kopyalanamadı");
+        });
+      } catch (err) {
+        console.error("Copy code hatası:", err);
+      }
+    }
+
+    function clearChat() {
+      try {
+        if (confirm("Tüm sohbet geçmişi silinecek. Emin misiniz?")) {
+          localStorage.removeItem("aiContextMemory");
+          chatHistory = [];
+          outputDiv.innerHTML = "";
+          showEmptyState();
+          showToast("✓ Sohbet temizlendi");
+        }
+      } catch (err) {
+        console.error("Chat temizleme hatası:", err);
+        showToast("Temizleme başarısız");
+      }
+    }
+
+    function showToast(message) {
+      try {
+        const toast = document.getElementById("toastBox");
+        toast.textContent = message;
+        toast.classList.add("show");
+        setTimeout(() => toast.classList.remove("show"), 3500);
+      } catch (err) {
+        console.warn("Toast gösterilirken hata:", err);
+      }
+    }
+
+    /* ═════════════════════════════════════════════════════════════════════════════ */
+    /* ─── EVENT LISTENERS ──────────────────────────────────────────────────────── */
+    /* ═════════════════════════════════════════════════════════════════════════════ */
+
+    btnEl.addEventListener("click", send);
+
+    clearBtn.addEventListener("click", clearChat);
+
+    inputEl.addEventListener("keydown", function(e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    });
+
+    inputEl.addEventListener("input", function() {
+      try {
+        this.style.height = "auto";
+        this.style.height = this.scrollHeight + "px";
+        const len = this.value.length;
+        charCountEl.textContent = len;
+        charCountEl.classList.toggle("warn", len > 800);
+      } catch (err) {
+        console.warn("Input event hatası:", err);
+      }
+    });
+
+    // Sayfa kapatılırken temizlik
+    window.addEventListener("beforeunload", function() {
+      try {
+        if (chatHistory.length > 0) {
+          localStorage.setItem("aiContextMemory", JSON.stringify(chatHistory));
+        }
+      } catch (err) {
+        console.warn("Beforeunload hatası:", err);
+      }
+    });
+
+  </script>
+</body>
+</html>
